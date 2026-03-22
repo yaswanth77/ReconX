@@ -1,0 +1,21 @@
+# GitHub dork patterns — {domain} is replaced with target domain
+"{domain}" password
+"{domain}" api_key
+"{domain}" secret
+"{domain}" token
+"{domain}" credentials
+"{domain}" aws_access_key
+"{domain}" database_url
+"{domain}" smtp
+"{domain}" private_key
+"{domain}" .env
+"{domain}" apikey
+"{domain}" authorization
+"{domain}" mysql
+"{domain}" postgres
+"{domain}" mongodb
+"{domain}" redis
+"{domain}" elasticsearch
+"{domain}" firebase
+"{domain}" s3
+"{domain}" bucket

@@ -1,0 +1,72 @@
+# Normal profile — recommended default for bug bounty
+# Covers: full recon + OSINT emails + Nuclei (safe) + AI
+
+stages:
+  enabled:
+    - dns
+    - subs
+    - axfr
+    - validate
+    - vhosts
+    - fingerprint
+    - urls
+    - search
+    - params
+    - osint_emails
+    - vuln_nuclei
+
+network:
+  rate_limit_rps: 10
+  concurrency: 50
+  timeout: 30
+  retries: 2
+
+http:
+  ports: [80, 443, 8080, 8443]
+
+dns:
+  wildcard_detection: true
+
+subs:
+  brute_force: false
+
+vhosts:
+  enabled: true
+
+crawl:
+  max_depth: 3
+  max_urls_per_host: 500
+  same_origin_only: true
+
+params:
+  arjun_enabled: true
+  endpoint_filters:
+    - id
+    - user
+    - account
+    - order
+    - search
+    - redirect
+    - callback
+    - url
+    - next
+    - return
+
+osint:
+  emails_enabled: true
+  metadata_enabled: false
+  github_enabled: false
+
+vuln:
+  nuclei_tags:
+    - exposure
+    - misconfig
+    - cve
+  xss_enabled: false
+  sqli_enabled: false
+  misc_enabled: false
+
+ai:
+  enabled: true
+  provider: ollama
+  model: llama3

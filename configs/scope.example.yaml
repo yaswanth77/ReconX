@@ -1,0 +1,38 @@
+# ReconX Scope File — Example
+# Copy this and customize for your target
+
+in_scope:
+  roots:
+    - example.com
+  include_subdomains: true
+  include_schemes:
+    - http
+    - https
+  allowed_ports:
+    - 80
+    - 443
+    - 8080
+    - 8443
+
+out_of_scope:
+  host_patterns:
+    - "*.internal.example.com"
+    - "dev-*"
+  url_patterns:
+    - "*/logout*"
+    - "*/delete*"
+    - "*/unsubscribe*"
+  extensions:
+    - ".jpg"
+    - ".jpeg"
+    - ".png"
+    - ".gif"
+    - ".svg"
+    - ".css"
+    - ".woff"
+    - ".woff2"
+    - ".ttf"
+    - ".eot"
+    - ".ico"
+    - ".mp4"
+    - ".mp3"

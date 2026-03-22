@@ -1,0 +1,93 @@
+# Deep profile — full pentest mode
+# Covers: everything including vuln scanning + full OSINT + AI on max
+
+stages:
+  enabled:
+    - dns
+    - subs
+    - axfr
+    - validate
+    - vhosts
+    - fingerprint
+    - urls
+    - search
+    - params
+    - osint_emails
+    - osint_metadata
+    - osint_github
+    - vuln_nuclei
+    - vuln_xss
+    - vuln_sqli
+    - vuln_misc
+
+network:
+  rate_limit_rps: 15
+  concurrency: 75
+  timeout: 30
+  retries: 2
+
+http:
+  ports: [80, 443, 8080, 8443, 8000, 3000, 9090]
+
+dns:
+  wildcard_detection: true
+
+subs:
+  brute_force: true
+
+vhosts:
+  enabled: true
+
+crawl:
+  max_depth: 5
+  max_urls_per_host: 1000
+  same_origin_only: true
+
+params:
+  arjun_enabled: true
+  endpoint_filters:
+    - id
+    - user
+    - uid
+    - account
+    - order
+    - item
+    - product
+    - search
+    - query
+    - q
+    - filter
+    - redirect
+    - url
+    - next
+    - return
+    - callback
+    - goto
+    - dest
+    - file
+    - path
+    - dir
+    - include
+    - template
+
+osint:
+  emails_enabled: true
+  metadata_enabled: true
+  github_enabled: true
+  github_token: null  # Set via env: GITHUB_TOKEN
+
+vuln:
+  nuclei_tags:
+    - exposure
+    - misconfig
+    - cve
+    - default-login
+    - takeover
+  xss_enabled: true
+  sqli_enabled: true
+  misc_enabled: true
+
+ai:
+  enabled: true
+  provider: ollama
+  model: llama3

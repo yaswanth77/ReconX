@@ -1,0 +1,51 @@
+# Fast profile — passive-first, minimal noise
+# Best for: quick surface scan, rate-limited targets
+
+stages:
+  enabled:
+    - dns
+    - subs
+    - axfr
+    - validate
+    - urls
+    - search
+
+network:
+  rate_limit_rps: 5
+  concurrency: 20
+  timeout: 15
+  retries: 1
+
+http:
+  ports: [80, 443]
+
+dns:
+  wildcard_detection: true
+
+subs:
+  brute_force: false
+
+vhosts:
+  enabled: false
+
+crawl:
+  max_depth: 2
+  max_urls_per_host: 100
+  same_origin_only: true
+
+params:
+  arjun_enabled: false
+
+osint:
+  emails_enabled: false
+  metadata_enabled: false
+  github_enabled: false
+
+vuln:
+  nuclei_tags: []
+  xss_enabled: false
+  sqli_enabled: false
+  misc_enabled: false
+
+ai:
+  enabled: false

@@ -1,0 +1,20 @@
+# Well-known URLs — standard paths checked before crawling
+/.well-known/security.txt
+/.well-known/openid-configuration
+/.well-known/assetlinks.json
+/.well-known/apple-app-site-association
+/.well-known/change-password
+/.well-known/jwks.json
+/.well-known/openapi.json
+/.well-known/webfinger
+/.well-known/nodeinfo
+/sitemap.xml
+/sitemap_index.xml
+/robots.txt
+/crossdomain.xml
+/clientaccesspolicy.xml
+/humans.txt
+/security.txt
+/ads.txt
+/app-ads.txt
+/.well-known/dnt-policy.txt
