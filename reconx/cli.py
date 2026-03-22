@@ -145,20 +145,21 @@ def doctor():
     except ImportError:
         console.print(f"  [yellow]⚠[/yellow] openai library — [dim]pip install openai[/dim]")
 
+    # Ollama — check server via HTTP (no pip package needed anymore)
+    import urllib.request
+    import urllib.error
     try:
-        import ollama
-        console.print(f"  [green]✓[/green] ollama Python library [dim](auto-installed with ReconX)[/dim]")
-        try:
-            models = ollama.list()
-            model_count = len(models.get('models', []))
+        req = urllib.request.Request("http://localhost:11434/api/tags", method="GET")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            model_count = len(data.get("models", []))
             console.print(f"  [green]✓[/green] Ollama server running ({model_count} models)")
-        except Exception:
-            console.print(f"  [yellow]⚠[/yellow] Ollama server/app NOT installed")
-            console.print(f"           [dim]The Python library is installed, but you need the Ollama app:[/dim]")
-            console.print(f"           [dim]Download from: https://ollama.ai/download[/dim]")
-            console.print(f"           [dim]Then run: ollama pull llama3[/dim]")
-    except ImportError:
-        console.print(f"  [yellow]⚠[/yellow] ollama — [dim]pip install ollama & https://ollama.ai/download[/dim]")
+            if model_count == 0:
+                console.print(f"           [dim]No models pulled yet. Run: ollama pull llama3[/dim]")
+    except (urllib.error.URLError, Exception):
+        console.print(f"  [yellow]⚠[/yellow] Ollama server not reachable at localhost:11434")
+        console.print(f"           [dim]Download from: https://ollama.ai/download[/dim]")
+        console.print(f"           [dim]Then run: ollama serve[/dim]")
 
     # Python dependencies
     console.print("\n[bold]Python Dependencies:[/bold]\n")
@@ -550,6 +551,14 @@ def run(ctx, target, scope_path, profile, stage_list, skip, run_id,
                 summary_text, encoding="utf-8"
             )
 
+    # Generate HTML report
+    try:
+        from reconx.reports.html_report import generate_html_report
+        html_out = generate_html_report(run_dir)
+        console.print(f"  [green]✓ HTML report → {html_out}[/green]")
+    except Exception as e:
+        console.print(f"  [yellow]HTML report failed: {e}[/yellow]")
+
     console.print(f"\n[bold green]✓ Run complete![/bold green]")
     console.print(f"[dim]Results: {run_dir}[/dim]")
 
@@ -634,12 +643,17 @@ def check(scope_path, target):
 
 @cli.command(name="export")
 @click.option("--run", "run_path", required=True, help="Path to run directory")
-@click.option("--format", "fmt", default="csv", help="Format: csv|md|burp|nuclei|json")
+@click.option("--format", "fmt", default="csv", help="Format: csv|md|html|burp|nuclei|json")
 @click.option("--out", "out_path", default=None, help="Output file path")
 def export_cmd(run_path, fmt, out_path):
     """Export run data to various formats."""
-    from reconx.reports.export import export_data
-    export_data(run_path, fmt, out_path)
+    if fmt == "html":
+        from reconx.reports.html_report import generate_html_report
+        out = generate_html_report(run_path, out_path)
+        console.print(f"[green]✓ HTML report → {out}[/green]")
+    else:
+        from reconx.reports.export import export_data
+        export_data(run_path, fmt, out_path)
 
 
 @cli.command()

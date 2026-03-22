@@ -86,11 +86,17 @@ class OpenAIProvider(AIProvider):
 
 
 class OllamaProvider(AIProvider):
-    """Ollama local LLM provider (free, runs locally)."""
+    """
+    Ollama local LLM provider (free, runs locally).
+
+    Uses raw HTTP API calls to localhost:11434 — does NOT require
+    the 'ollama' pip package. Only requires the Ollama server/app
+    to be running (https://ollama.ai/download).
+    """
 
     def __init__(self, model: str = "llama3", base_url: str = "http://localhost:11434"):
         self.model = model
-        self.base_url = base_url
+        self.base_url = base_url.rstrip("/")
 
     def complete(
         self,
@@ -100,35 +106,55 @@ class OllamaProvider(AIProvider):
         max_tokens: int = 2000,
         json_mode: bool = False,
     ) -> str:
-        try:
-            import ollama
+        import urllib.request
+        import urllib.error
 
+        try:
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
 
-            kwargs = {
+            payload = {
                 "model": self.model,
                 "messages": messages,
+                "stream": False,
                 "options": {
                     "temperature": temperature,
                     "num_predict": max_tokens,
                 },
             }
             if json_mode:
-                kwargs["format"] = "json"
+                payload["format"] = "json"
 
-            response = ollama.chat(**kwargs)
-            return response["message"]["content"] or ""
+            data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                f"{self.base_url}/api/chat",
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                return result.get("message", {}).get("content", "") or ""
+
+        except urllib.error.URLError as e:
+            return f"[AI Error: Cannot reach Ollama server at {self.base_url} — {e.reason}]"
         except Exception as e:
             return f"[AI Error: {e}]"
 
     def is_available(self) -> bool:
+        import urllib.request
+        import urllib.error
+
         try:
-            import ollama
-            ollama.list()
-            return True
+            req = urllib.request.Request(
+                f"{self.base_url}/api/tags",
+                method="GET",
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return resp.status == 200
         except Exception:
             return False
 
