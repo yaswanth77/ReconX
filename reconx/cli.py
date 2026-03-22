@@ -141,21 +141,24 @@ def doctor():
     console.print("\n[bold]AI Providers:[/bold]\n")
     try:
         import openai
-        console.print(f"  [green]✓[/green] openai library installed")
+        console.print(f"  [green]✓[/green] openai Python library [dim](auto-installed with ReconX)[/dim]")
     except ImportError:
         console.print(f"  [yellow]⚠[/yellow] openai library — [dim]pip install openai[/dim]")
 
     try:
         import ollama
-        console.print(f"  [green]✓[/green] ollama library installed")
+        console.print(f"  [green]✓[/green] ollama Python library [dim](auto-installed with ReconX)[/dim]")
         try:
             models = ollama.list()
             model_count = len(models.get('models', []))
-            console.print(f"  [green]✓[/green] ollama server running ({model_count} models)")
+            console.print(f"  [green]✓[/green] Ollama server running ({model_count} models)")
         except Exception:
-            console.print(f"  [yellow]⚠[/yellow] ollama server not running — [dim]start with: ollama serve[/dim]")
+            console.print(f"  [yellow]⚠[/yellow] Ollama server/app NOT installed")
+            console.print(f"           [dim]The Python library is installed, but you need the Ollama app:[/dim]")
+            console.print(f"           [dim]Download from: https://ollama.ai/download[/dim]")
+            console.print(f"           [dim]Then run: ollama pull llama3[/dim]")
     except ImportError:
-        console.print(f"  [yellow]⚠[/yellow] ollama library — [dim]pip install ollama & https://ollama.ai[/dim]")
+        console.print(f"  [yellow]⚠[/yellow] ollama — [dim]pip install ollama & https://ollama.ai/download[/dim]")
 
     # Python dependencies
     console.print("\n[bold]Python Dependencies:[/bold]\n")
@@ -180,6 +183,213 @@ def doctor():
         console.print("[dim]ReconX works without them but results will be limited.[/dim]")
     else:
         console.print("\n[bold green]✓ All tools ready! You're good to go.[/bold green]")
+
+    console.print("\n[dim]Tip: Run 'reconx install' to auto-install tools interactively.[/dim]")
+
+
+# ── Tool definitions shared between doctor and install ──
+INSTALLABLE_TOOLS = [
+    {
+        "name": "httpx",
+        "level": "required",
+        "desc": "Service validation & fingerprinting",
+        "type": "go",
+        "install": "go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest",
+    },
+    {
+        "name": "subfinder",
+        "level": "recommended",
+        "desc": "Subdomain enumeration",
+        "type": "go",
+        "install": "go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
+    },
+    {
+        "name": "gau",
+        "level": "recommended",
+        "desc": "Historical URL discovery",
+        "type": "go",
+        "install": "go install github.com/lc/gau/v2/cmd/gau@latest",
+    },
+    {
+        "name": "waybackurls",
+        "level": "recommended",
+        "desc": "Wayback Machine URLs",
+        "type": "go",
+        "install": "go install github.com/tomnomnom/waybackurls@latest",
+    },
+    {
+        "name": "nuclei",
+        "level": "recommended",
+        "desc": "Vulnerability scanning",
+        "type": "go",
+        "install": "go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+    },
+    {
+        "name": "katana",
+        "level": "optional",
+        "desc": "Advanced crawling",
+        "type": "go",
+        "install": "go install github.com/projectdiscovery/katana/cmd/katana@latest",
+    },
+    {
+        "name": "paramspider",
+        "level": "optional",
+        "desc": "Passive parameter mining",
+        "type": "pip",
+        "install": "pip install paramspider",
+    },
+    {
+        "name": "arjun",
+        "level": "optional",
+        "desc": "Active parameter discovery",
+        "type": "pip",
+        "install": "pip install arjun",
+    },
+    {
+        "name": "theHarvester",
+        "level": "optional",
+        "desc": "Email harvesting (OSINT)",
+        "type": "pip",
+        "install": "pip install theHarvester",
+    },
+]
+
+
+@cli.command()
+@click.option("--all", "install_all", is_flag=True, help="Install all tools without prompting")
+def install(install_all):
+    """Interactive tool installer — select which tools to install."""
+    import subprocess
+
+    console.print(BANNER)
+    console.print("[bold]ReconX Tool Installer[/bold]")
+    console.print("[dim]Automatically installs external tools needed by the pipeline.[/dim]\n")
+
+    # Check Go availability (needed for most tools)
+    go_available = shutil.which("go") is not None
+    if not go_available:
+        console.print("[yellow]⚠ Go is not installed. Go tools need Go to install.[/yellow]")
+        console.print("[dim]  Download Go from: https://go.dev/dl/[/dim]")
+        console.print("[dim]  After installing Go, run 'reconx install' again.\n[/dim]")
+
+    # Show numbered tool list
+    console.print("[bold]Available tools:[/bold]\n")
+    not_installed = []
+    for i, tool in enumerate(INSTALLABLE_TOOLS, 1):
+        installed = shutil.which(tool["name"]) is not None
+        status = "[green]installed[/green]" if installed else "[red]not installed[/red]"
+        level_color = {"required": "red", "recommended": "yellow", "optional": "dim"}
+        lc = level_color.get(tool["level"], "white")
+
+        console.print(
+            f"  [bold]{i:>2}.[/bold] {tool['name']:<15} {status:<30} "
+            f"[{lc}]{tool['level']}[/{lc}]  [dim]{tool['desc']}[/dim]"
+        )
+        if not installed:
+            not_installed.append((i, tool))
+
+    if not not_installed:
+        console.print("\n[bold green]✓ All tools already installed![/bold green]")
+        return
+
+    console.print(f"\n[dim]Not installed: {len(not_installed)} tools[/dim]")
+
+    # Get selection
+    if install_all:
+        selected_indices = [i for i, _ in not_installed]
+    else:
+        console.print("\n[bold]Select tools to install:[/bold]")
+        console.print("[dim]  Enter numbers separated by commas (e.g., 1,3,5)[/dim]")
+        console.print("[dim]  Enter 'all' to install everything[/dim]")
+        console.print("[dim]  Enter 'required' for required tools only[/dim]")
+        console.print("[dim]  Enter 'recommended' for required + recommended[/dim]")
+        console.print("[dim]  Press Enter to cancel\n[/dim]")
+
+        choice = click.prompt("Your selection", default="", show_default=False)
+        choice = choice.strip().lower()
+
+        if not choice:
+            console.print("[dim]Cancelled.[/dim]")
+            return
+
+        if choice == "all":
+            selected_indices = [i for i, _ in not_installed]
+        elif choice == "required":
+            selected_indices = [i for i, t in not_installed if t["level"] == "required"]
+        elif choice == "recommended":
+            selected_indices = [i for i, t in not_installed if t["level"] in ("required", "recommended")]
+        else:
+            try:
+                selected_indices = [int(x.strip()) for x in choice.split(",")]
+            except ValueError:
+                console.print("[red]Invalid input. Use numbers separated by commas.[/red]")
+                return
+
+    # Install selected tools
+    to_install = [t for i, t in not_installed if i in selected_indices]
+
+    if not to_install:
+        console.print("[dim]Nothing to install.[/dim]")
+        return
+
+    console.print(f"\n[bold]Installing {len(to_install)} tools...[/bold]\n")
+
+    success_count = 0
+    fail_count = 0
+
+    for tool in to_install:
+        tool_type = tool["type"]
+        cmd = tool["install"]
+
+        # Skip Go tools if Go isn't installed
+        if tool_type == "go" and not go_available:
+            console.print(f"  [yellow]⏭ Skipping {tool['name']} (Go not installed)[/yellow]")
+            fail_count += 1
+            continue
+
+        console.print(f"  [cyan]⏳ Installing {tool['name']}...[/cyan]")
+        console.print(f"     [dim]{cmd}[/dim]")
+
+        try:
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+
+            # Verify installation
+            if shutil.which(tool["name"]):
+                console.print(f"  [green]✓ {tool['name']} installed successfully![/green]")
+                success_count += 1
+            elif result.returncode == 0:
+                console.print(f"  [yellow]⚠ {tool['name']} — command succeeded but tool not in PATH[/yellow]")
+                if tool_type == "go":
+                    console.print(f"     [dim]Add $GOPATH/bin to your PATH[/dim]")
+                fail_count += 1
+            else:
+                console.print(f"  [red]✗ {tool['name']} — install failed[/red]")
+                if result.stderr:
+                    console.print(f"     [dim]{result.stderr[:200]}[/dim]")
+                fail_count += 1
+
+        except subprocess.TimeoutExpired:
+            console.print(f"  [red]✗ {tool['name']} — timed out after 5 minutes[/red]")
+            fail_count += 1
+        except Exception as e:
+            console.print(f"  [red]✗ {tool['name']} — error: {e}[/red]")
+            fail_count += 1
+
+    # Summary
+    console.print(f"\n[bold]Install Summary:[/bold] {success_count} installed, {fail_count} failed")
+
+    if success_count > 0:
+        console.print("[dim]Run 'reconx doctor' to verify.\n[/dim]")
+
+    if fail_count > 0 and not go_available:
+        console.print("[yellow]Most tools need Go. Install Go first: https://go.dev/dl/[/yellow]")
+        console.print("[dim]After installing Go, add $GOPATH/bin to PATH and retry.\n[/dim]")
 
 
 @cli.command()
