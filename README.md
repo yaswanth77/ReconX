@@ -27,7 +27,7 @@ With optional **AI integration**, ReconX dynamically generates subdomain candida
 
 ```bash
 # 1. Clone
-git clone https://github.com/yeswanth/reconx.git
+git clone https://github.com/yaswanth77/reconx.git
 cd reconx
 
 # 2. Install
