@@ -149,7 +149,7 @@ class PipelineScheduler:
             if gate and self.ctx.stage_status.get(gate) != "success":
                 # Check if gate was skipped but has data from a previous run
                 gate_store = self._get_gate_store(gate)
-                if gate_store and gate_store > 0:
+                if gate_store > 0:
                     pass  # Gate satisfied by existing data
                 else:
                     console.print(
@@ -202,8 +202,8 @@ class PipelineScheduler:
                 f"  [red]✗ {stage_name} failed ({elapsed:.1f}s): {e}[/red]"
             )
 
-    def _get_gate_store(self, gate: str) -> int | None:
-        """Get the count of items in the gate's primary store."""
+    def _get_gate_store(self, gate: str) -> int:
+        """Return the count of items in the gate's primary store (0 if unknown)."""
         store_map = {
             "dns": self.ctx.stores.hosts.count,
             "subs": self.ctx.stores.hosts.count,
@@ -211,7 +211,7 @@ class PipelineScheduler:
             "urls": self.ctx.stores.urls.count,
             "params": self.ctx.stores.params.count,
         }
-        return store_map.get(gate)
+        return store_map.get(gate, 0)
 
     def _print_summary(self):
         """Print a summary table after pipeline completion."""

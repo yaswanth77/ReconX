@@ -8,6 +8,12 @@ ensuring a single canonical form and killing redundancy upstream.
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 import re
 
+try:
+    import tldextract
+    _TLDEXTRACT = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None)
+except ImportError:
+    _TLDEXTRACT = None
+
 
 def normalize_host(host: str) -> str:
     """Canonical hostname: lowercase, strip trailing dot, strip whitespace."""
@@ -94,8 +100,22 @@ def normalize_service(url: str) -> str:
 
 
 def extract_domain(host: str) -> str:
-    """Extract the registrable domain from a hostname (simple heuristic)."""
+    """Return the registrable domain (eTLD+1) for a hostname; IPs pass through."""
     host = normalize_host(host)
+    if not host:
+        return ""
+    try:
+        import ipaddress
+        ipaddress.ip_address(host)
+        return host
+    except ValueError:
+        pass
+    if _TLDEXTRACT is not None:
+        extracted = _TLDEXTRACT(host)
+        registered = getattr(extracted, "top_domain_under_public_suffix", None) \
+            or extracted.registered_domain
+        if registered:
+            return registered
     parts = host.split(".")
     if len(parts) >= 2:
         return ".".join(parts[-2:])

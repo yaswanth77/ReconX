@@ -68,6 +68,7 @@ DEFAULT_CONFIG = {
         "model": None,
         "api_key": None,
         "base_url": None,
+        "token_budget": 100_000,
     },
     "wordlists": {
         "creepy_paths": "configs/wordlists/creepy_paths.txt",

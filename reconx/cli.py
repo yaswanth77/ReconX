@@ -6,6 +6,7 @@ Commands: init, doctor, run, stage, scope, export, diff
 
 import click
 import os
+import re
 import sys
 import json
 import shutil
@@ -14,7 +15,39 @@ from datetime import datetime, timezone
 from rich.console import Console
 from rich.panel import Panel
 
-console = Console()
+console = Console(force_terminal=sys.stdout.isatty())
+
+from reconx import __version__
+
+_TARGET_RE = re.compile(r"^(?!-)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.(?!-)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$")
+
+
+def _clean_target(raw: str) -> str:
+    """Strip scheme/path, lowercase, and validate as a hostname or IP."""
+    if not raw:
+        raise click.BadParameter("--target is required")
+    cleaned = raw.strip().lower()
+    if cleaned.startswith(("http://", "https://")):
+        from urllib.parse import urlparse
+        cleaned = urlparse(cleaned).hostname or ""
+    cleaned = cleaned.rstrip(".")
+    if not cleaned:
+        raise click.BadParameter(f"Invalid --target: {raw!r}")
+    try:
+        import ipaddress
+        ipaddress.ip_address(cleaned)
+        return cleaned
+    except ValueError:
+        pass
+    try:
+        import validators
+        if validators.domain(cleaned):
+            return cleaned
+    except ImportError:
+        pass
+    if _TARGET_RE.match(cleaned):
+        return cleaned
+    raise click.BadParameter(f"--target must be a valid domain or IP, got {raw!r}")
 
 BANNER = """
 [bold cyan]
@@ -29,6 +62,7 @@ BANNER = """
 
 
 @click.group()
+@click.version_option(version=__version__, prog_name="reconx")
 @click.option("--workspace", default="./runs", help="Base directory for runs")
 @click.option("--quiet", is_flag=True, help="Suppress verbose output")
 @click.option("--no-color", is_flag=True, help="Disable colored output")
@@ -89,6 +123,8 @@ def doctor():
 
     # (name, level, description, install_hint)
     tools = [
+        ("finalrecon", "recommended", "Broad surface map (DNS/whois/SSL/CT)",
+         "pip install finalrecon  # or https://github.com/thewhiteh4t/FinalRecon"),
         ("httpx", "required", "Service validation & fingerprinting",
          "go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest"),
         ("subfinder", "recommended", "Subdomain enumeration",
@@ -190,6 +226,13 @@ def doctor():
 
 # ── Tool definitions shared between doctor and install ──
 INSTALLABLE_TOOLS = [
+    {
+        "name": "finalrecon",
+        "level": "recommended",
+        "desc": "Broad surface map (DNS/whois/SSL/CT)",
+        "type": "pip",
+        "install": "pip install finalrecon",
+    },
     {
         "name": "httpx",
         "level": "required",
@@ -452,16 +495,20 @@ def run(ctx, target, scope_path, profile, stage_list, skip, run_id,
     from reconx.core.scope import Scope
     scope = Scope(scope_path)
 
-    # Clean target
-    target = target.strip().lower()
-    if target.startswith(("http://", "https://")):
-        from urllib.parse import urlparse
-        target = urlparse(target).hostname or target
+    # Validate & clean target (blocks path traversal / argv injection via --target)
+    target = _clean_target(target)
 
     # Create run directory
     if not run_id:
         run_id = datetime.now().strftime("%Y%m%dT%H%M%S") + f"_{target}"
-    run_dir = workspace / target / run_id
+    # Extra safety: ensure the resolved run_dir stays inside the workspace
+    workspace_resolved = workspace.resolve()
+    run_dir = (workspace / target / run_id).resolve()
+    try:
+        run_dir.relative_to(workspace_resolved)
+    except ValueError:
+        console.print(f"[red]✗ Refusing to create run directory outside workspace: {run_dir}[/red]")
+        sys.exit(2)
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "data").mkdir(exist_ok=True)
     (run_dir / "logs").mkdir(exist_ok=True)
@@ -497,6 +544,8 @@ def run(ctx, target, scope_path, profile, stage_list, skip, run_id,
             model=config.get("ai.model"),
             base_url=config.get("ai.base_url"),
             enabled=True,
+            cache_path=run_dir / "data" / "ai_cache.json",
+            token_budget=config.get("ai.token_budget") or None,
         )
 
     # Build pipeline context
@@ -613,13 +662,13 @@ def stage(ctx, stage_name, run_path, fresh):
     scheduler.run_single(stage_name)
 
 
-@cli.group()
-def scope():
+@cli.group(name="scope")
+def scope_group():
     """Scope utilities."""
     pass
 
 
-@scope.command()
+@scope_group.command()
 @click.option("--scope", "scope_path", required=True, help="Scope YAML file")
 @click.option("--target", required=True, help="Host or URL to check")
 def check(scope_path, target):
