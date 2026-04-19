@@ -66,10 +66,11 @@ class ToolRunner:
         tool: str,
         args: list[str],
         timeout: int = 600,
-        retries: int = 1,
+        attempts: int = 3,
         input_data: str | None = None,
         cwd: str | Path | None = None,
         env: dict | None = None,
+        retries: int | None = None,
     ) -> "ToolResult":
         """
         Run an external tool with retry logic.
@@ -78,19 +79,24 @@ class ToolRunner:
             tool: The command name (e.g., "httpx").
             args: Command arguments.
             timeout: Max seconds per attempt.
-            retries: Number of retry attempts (1 = no retry).
+            attempts: Total attempts (1 = single try, no retry). Default 3.
             input_data: Optional stdin data.
             cwd: Working directory.
             env: Additional environment variables.
+            retries: Deprecated alias for ``attempts``; kept for one release.
 
         Returns:
             ToolResult with stdout, stderr, return_code, success.
         """
+        if retries is not None:
+            attempts = retries
+        if attempts < 1:
+            attempts = 1
         cmd = [tool] + args
         cmd_str = " ".join(cmd)
         last_error = None
 
-        for attempt in range(1, retries + 1):
+        for attempt in range(1, attempts + 1):
             try:
                 console.print(
                     f"  [dim]→ {cmd_str[:120]}{'...' if len(cmd_str) > 120 else ''}[/dim]"
@@ -125,21 +131,21 @@ class ToolRunner:
                         if result.stderr:
                             f.write(f"STDERR:\n{result.stderr[:2000]}\n")
 
-                if tool_result.success or attempt == retries:
+                if tool_result.success or attempt == attempts:
                     return tool_result
 
                 last_error = tool_result.stderr
                 console.print(
-                    f"  [yellow]⚠ Attempt {attempt}/{retries} failed, retrying...[/yellow]"
+                    f"  [yellow]⚠ Attempt {attempt}/{attempts} failed, retrying...[/yellow]"
                 )
                 time.sleep(2 ** attempt)  # Exponential backoff
 
             except subprocess.TimeoutExpired:
                 last_error = f"Timeout after {timeout}s"
                 console.print(
-                    f"  [red]✗ Timeout after {timeout}s (attempt {attempt}/{retries})[/red]"
+                    f"  [red]✗ Timeout after {timeout}s (attempt {attempt}/{attempts})[/red]"
                 )
-                if attempt < retries:
+                if attempt < attempts:
                     time.sleep(2 ** attempt)
 
             except FileNotFoundError:
@@ -154,7 +160,7 @@ class ToolRunner:
         return ToolResult(
             command=cmd_str,
             stdout="",
-            stderr=last_error or "All retries failed",
+            stderr=last_error or "All attempts failed",
             return_code=-1,
             success=False,
         )

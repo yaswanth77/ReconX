@@ -8,6 +8,11 @@ doesn't care which one is backing it.
 from abc import ABC, abstractmethod
 from typing import Optional
 import json
+import logging
+
+_log = logging.getLogger(__name__)
+
+_GENERIC_ERROR = "[AI Error: provider unavailable]"
 
 
 class AIProvider(ABC):
@@ -73,7 +78,8 @@ class OpenAIProvider(AIProvider):
             response = client.chat.completions.create(**create_kwargs)
             return response.choices[0].message.content or ""
         except Exception as e:
-            return f"[AI Error: {e}]"
+            _log.debug("OpenAI call failed: %s", e)
+            return _GENERIC_ERROR
 
     def is_available(self) -> bool:
         try:
@@ -81,8 +87,9 @@ class OpenAIProvider(AIProvider):
             client = OpenAI(api_key=self.api_key)
             client.models.list()
             return True
-        except Exception:
-            return bool(self.api_key)
+        except Exception as e:
+            _log.debug("OpenAI availability probe failed: %s", e)
+            return False
 
 
 class OllamaProvider(AIProvider):
@@ -140,9 +147,11 @@ class OllamaProvider(AIProvider):
                 return result.get("message", {}).get("content", "") or ""
 
         except urllib.error.URLError as e:
-            return f"[AI Error: Cannot reach Ollama server at {self.base_url} — {e.reason}]"
+            _log.debug("Ollama URLError at %s: %s", self.base_url, e.reason)
+            return "[AI Error: Ollama server unreachable — is it running?]"
         except Exception as e:
-            return f"[AI Error: {e}]"
+            _log.debug("Ollama call failed: %s", e)
+            return _GENERIC_ERROR
 
     def is_available(self) -> bool:
         import urllib.request
@@ -199,10 +208,23 @@ class GroqProvider(AIProvider):
             response = client.chat.completions.create(**create_kwargs)
             return response.choices[0].message.content or ""
         except Exception as e:
-            return f"[AI Error: {e}]"
+            _log.debug("Groq call failed: %s", e)
+            return _GENERIC_ERROR
 
     def is_available(self) -> bool:
-        return bool(self.api_key)
+        if not self.api_key:
+            return False
+        try:
+            from openai import OpenAI
+            client = OpenAI(
+                api_key=self.api_key,
+                base_url="https://api.groq.com/openai/v1",
+            )
+            client.models.list()
+            return True
+        except Exception as e:
+            _log.debug("Groq availability probe failed: %s", e)
+            return False
 
 
 def create_provider(

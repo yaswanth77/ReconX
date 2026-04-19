@@ -2,10 +2,14 @@
 Stage 10: OSINT — Email Harvesting via theHarvester.
 """
 
+import re
 from datetime import datetime, timezone
 from rich.console import Console
 
 console = Console()
+
+# Simple RFC-5322-ish email pattern; good enough for harvesting lines.
+_EMAIL_RE = re.compile(r"\b([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\b")
 
 
 def run(ctx):
@@ -16,36 +20,42 @@ def run(ctx):
         console.print("  [dim]Email harvesting disabled[/dim]")
         return
 
-    if ctx.runner.is_available("theHarvester"):
-        console.print("  [dim]Running theHarvester...[/dim]")
-        result = ctx.runner.run(
-            "theHarvester",
-            ["-d", target, "-b", "all", "-l", "200"],
-            timeout=300,
-        )
-        if result.success:
-            count = 0
-            for line in result.lines:
-                line = line.strip()
-                if "@" in line and target in line:
-                    if ctx.stores.osint.add({
-                        "type": "email",
-                        "value": line,
-                        "source": "theHarvester",
-                        "domain": target,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }):
-                        count += 1
-            console.print(f"  [dim]Emails found: {count}[/dim]")
-    else:
-        # Fallback: basic email patterns from crawled pages
-        console.print("  [dim]theHarvester not found, extracting from crawled pages...[/dim]")
-        import re
-        urls = ctx.stores.urls.read_all()
-        count = 0
-        for url_record in urls:
-            url = url_record.get("url", "")
-            # We don't have page content stored, so this is limited
-            # In a full implementation, crawl stage would store content
+    if not ctx.runner.is_available("theHarvester"):
+        console.print("  [dim]theHarvester not installed — skipping email harvesting[/dim]")
+        console.print("  [dim]Install: pip install theHarvester[/dim]")
+        return
 
-        console.print(f"  [dim]Install theHarvester for full email discovery[/dim]")
+    console.print("  [dim]Running theHarvester...[/dim]")
+    result = ctx.runner.run(
+        "theHarvester",
+        ["-d", target, "-b", "all", "-l", "200"],
+        timeout=300,
+    )
+    if not result.success:
+        console.print("  [yellow]theHarvester returned non-zero; no emails harvested[/yellow]")
+        return
+
+    count = 0
+    seen: set[str] = set()
+    for line in result.lines:
+        for match in _EMAIL_RE.finditer(line):
+            email = match.group(0).lower()
+            if email in seen:
+                continue
+            seen.add(email)
+
+            domain = match.group(2).lower()
+            # Enforce scope on the email's domain, not a substring match.
+            if not ctx.scope.host_in_scope(domain):
+                continue
+
+            if ctx.stores.osint.add({
+                "type": "email",
+                "value": email,
+                "source": "theHarvester",
+                "domain": domain,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }):
+                count += 1
+
+    console.print(f"  [dim]Emails found: {count}[/dim]")
