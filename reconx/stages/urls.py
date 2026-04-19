@@ -128,7 +128,18 @@ def _fetch_wellknown(ctx, base_url: str) -> int:
 
 
 def _crawl(ctx, base_url: str) -> int:
-    """Depth-limited same-origin crawl."""
+    """Depth-limited same-origin crawl. Prefers katana when installed."""
+    # Prefer the proper crawler when it's available.
+    try:
+        from reconx.adapters import katana
+        if katana.is_available(ctx):
+            count = katana.crawl(ctx, base_url)
+            if count:
+                console.print(f"  [dim]  crawl (katana): {count} new URLs[/dim]")
+            return count
+    except Exception as e:
+        console.print(f"  [yellow]katana adapter failed: {e}; falling back to built-in crawler[/yellow]")
+
     import httpx as httpx_lib
     from urllib.parse import urljoin, urlparse
 

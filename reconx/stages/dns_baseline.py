@@ -19,6 +19,18 @@ def run(ctx):
     import string
 
     target = ctx.target
+
+    # Let FinalRecon do the broad surface pass first when available
+    # (DNS + whois + SSL + CT-subdomains in one call). Downstream stages
+    # still run regardless — this just seeds the stores early.
+    try:
+        from reconx.adapters import finalrecon
+        if finalrecon.is_available(ctx):
+            console.print("  [dim]Running FinalRecon broad surface scan...[/dim]")
+            finalrecon.run(ctx, target)
+    except Exception as e:
+        console.print(f"  [yellow]FinalRecon adapter failed: {e}[/yellow]")
+
     console.print(f"  [dim]Querying DNS records for {target}[/dim]")
 
     record_types = ["A", "AAAA", "CNAME", "NS", "SOA", "MX", "TXT"]
@@ -27,6 +39,8 @@ def run(ctx):
     resolver = dns.resolver.Resolver()
     resolvers = ctx.config.get("dns.resolvers", ["8.8.8.8", "1.1.1.1"])
     resolver.nameservers = resolvers
+    resolver.timeout = ctx.config.get("dns.query_timeout", 3)
+    resolver.lifetime = ctx.config.get("dns.lifetime", 5)
 
     for rtype in record_types:
         try:
