@@ -31,15 +31,35 @@ def run(ctx):
             scheme = "https" if port in (443, 8443) else "http"
             targets.append(f"{scheme}://{host}:{port}")
 
-    # Use httpx CLI if available (faster, handles TLS better)
-    if ctx.runner.is_available("httpx"):
-        _validate_with_httpx_cli(ctx, targets)
+    # Prefer ProjectDiscovery httpx when the binary on PATH is really the
+    # ProjectDiscovery one. On Debian/Kali `python3-httpx` also ships a
+    # binary called `httpx` that silently accepts our flags wrong, so the
+    # identity check is load-bearing here.
+    if ctx.runner.is_available("httpx") and ctx.runner.identity_ok("httpx"):
+        alive = _validate_with_httpx_cli(ctx, targets)
     else:
-        _validate_with_python(ctx, targets)
+        if ctx.runner.is_available("httpx"):
+            console.print(
+                "  [yellow]⚠ `httpx` on PATH isn't ProjectDiscovery httpx "
+                "(likely python3-httpx); using Python fallback.[/yellow]"
+            )
+            console.print(
+                "  [dim]Install: go install -v "
+                "github.com/projectdiscovery/httpx/cmd/httpx@latest[/dim]"
+            )
+        alive = _validate_with_python(ctx, targets)
+
+    if alive == 0 and targets:
+        # Tell the scheduler the gate didn't produce usable data so
+        # downstream stages (fingerprint/urls/vuln_*) skip cleanly.
+        raise RuntimeError(
+            f"validate: 0 of {len(targets)} targets came up alive — "
+            "check that httpx/network is working before rerunning"
+        )
 
 
-def _validate_with_httpx_cli(ctx, targets):
-    """Use the httpx CLI tool for validation."""
+def _validate_with_httpx_cli(ctx, targets) -> int:
+    """Use the httpx CLI tool for validation. Returns alive count."""
     import tempfile
     import os
 
@@ -92,12 +112,13 @@ def _validate_with_httpx_cli(ctx, targets):
                 continue
 
         console.print(f"  [dim]Alive services: {alive_count}[/dim]")
+        return alive_count
 
     finally:
         os.unlink(targets_file)
 
 
-def _validate_with_python(ctx, targets):
+def _validate_with_python(ctx, targets) -> int:
     """Fallback: validate using Python httpx library."""
     import httpx as httpx_lib
 
@@ -137,6 +158,7 @@ def _validate_with_python(ctx, targets):
             continue
 
     console.print(f"  [dim]Alive services: {alive_count}[/dim]")
+    return alive_count
 
 
 def _extract_title(html: str) -> str:

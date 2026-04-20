@@ -40,9 +40,11 @@ def run(ctx, target: str | None = None) -> dict:
     with tempfile.TemporaryDirectory(prefix="reconx_fr_") as tmpdir:
         out_dir = Path(tmpdir)
         url = f"https://{target}"
+        # FinalRecon v1.1.x flags: `-o json` and `-cd <dir>` (not --export/--output).
+        # `-nb` suppresses the ASCII banner so log captures stay clean.
         result = ctx.runner.run(
             "finalrecon",
-            ["--full", "--url", url, "--export", "json", "--output", str(out_dir)],
+            ["--full", "--url", url, "-o", "json", "-cd", str(out_dir), "-nb"],
             timeout=ctx.config.get("finalrecon.timeout", 600),
             attempts=1,
         )
@@ -50,7 +52,8 @@ def run(ctx, target: str | None = None) -> dict:
             console.print("  [yellow]FinalRecon run failed; skipping ingest[/yellow]")
             return {}
 
-        # FinalRecon writes one JSON per module into the output dir.
+        # FinalRecon v1.1.x writes a per-run directory under `-cd` containing
+        # one JSON per module (headers.json, sslinfo.json, whois.json, etc.).
         merged: dict = {}
         for jpath in sorted(out_dir.rglob("*.json")):
             try:
@@ -59,6 +62,10 @@ def run(ctx, target: str | None = None) -> dict:
                 continue
             merged[jpath.stem] = data
 
+        if merged:
+            console.print(
+                f"  [dim]FinalRecon produced {len(merged)} module outputs[/dim]"
+            )
         _ingest(ctx, target, merged)
         return merged
 

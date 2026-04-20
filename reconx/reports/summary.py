@@ -113,24 +113,8 @@ def generate_summary(ctx):
 
 
 def _generate_csv(ctx, report_dir: Path):
-    """Generate attack_surface.csv."""
-    import csv
+    """Generate attack_surface.csv covering every store (not just services)."""
+    from reconx.reports.export import _export_csv
 
     csv_path = report_dir / "attack_surface.csv"
-    services = ctx.stores.services.read_all()
-
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Service", "Host", "IP", "Status", "Title", "Server", "Tech"])
-        for svc in services:
-            writer.writerow([
-                svc.get("service", ""),
-                svc.get("host", ""),
-                svc.get("ip", ""),
-                svc.get("status", ""),
-                svc.get("title", ""),
-                svc.get("server", ""),
-                "|".join(svc.get("tech", [])),
-            ])
-
-    console.print(f"  [green]✓ CSV saved: {csv_path}[/green]")
+    _export_csv(ctx.run_dir / "data", str(csv_path))
