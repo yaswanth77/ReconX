@@ -29,9 +29,50 @@ class ToolRunner:
         if self.log_dir:
             self.log_dir.mkdir(parents=True, exist_ok=True)
 
+    # Expected version-string signatures so we don't mistake a same-name
+    # binary (e.g. python3-httpx's `httpx` CLI) for the ProjectDiscovery one.
+    _IDENTITY_SIGNATURES: dict[str, tuple[str, ...]] = {
+        "httpx": ("projectdiscovery",),
+        "subfinder": ("projectdiscovery", "subfinder"),
+        "nuclei": ("projectdiscovery", "nuclei"),
+        "katana": ("projectdiscovery", "katana"),
+        "finalrecon": ("finalrecon",),
+    }
+
     def is_available(self, tool_name: str) -> bool:
         """Check if a tool is available in PATH."""
         return shutil.which(tool_name) is not None
+
+    def identity_ok(self, tool_name: str) -> bool:
+        """
+        Verify the binary on PATH is the expected upstream tool, not a
+        same-name collision (python3-httpx ships a `httpx` CLI that has
+        nothing to do with ProjectDiscovery httpx, for instance).
+
+        Returns True when we can't tell (no signature registered) so this
+        stays opt-in per tool.
+        """
+        if not self.is_available(tool_name):
+            return False
+        signatures = self._IDENTITY_SIGNATURES.get(tool_name)
+        if not signatures:
+            return True
+
+        probes = [["-version"], ["--version"], ["-h"], ["--help"]]
+        for probe in probes:
+            try:
+                res = subprocess.run(
+                    [tool_name] + probe,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+            except Exception:
+                continue
+            blob = ((res.stdout or "") + (res.stderr or "")).lower()
+            if any(sig in blob for sig in signatures):
+                return True
+        return False
 
     def get_version(self, tool_name: str) -> str | None:
         """Try to get tool version string."""
