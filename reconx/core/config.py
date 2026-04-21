@@ -47,6 +47,12 @@ DEFAULT_CONFIG = {
     },
     "params": {
         "arjun_enabled": True,
+        "arjun_timeout": 60,
+        "arjun_max_endpoints": 25,
+        "arjun_scan_all": False,
+        "paramspider_timeout": 180,
+        "paramspider_timeout_private": 30,
+        "paramspider_attempts": 2,
         "endpoint_filters": ["id", "user", "account", "order", "search",
                              "redirect", "callback", "url", "next", "return"],
     },
