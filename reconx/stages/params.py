@@ -204,6 +204,20 @@ def _run_arjun(ctx) -> int:
     cap = ctx.config.get("params.arjun_max_endpoints", 25)
     scan_all = ctx.config.get("params.arjun_scan_all", False)
 
+    # Services with wildcard routing (SPA catch-alls) starve arjun's
+    # baseline detector; on those we only trust URLs that already carry
+    # a query string (definitely have params) instead of letting arjun
+    # time out on every speculative keyword match.
+    wildcard_services: set[str] = set()
+    for finding in ctx.stores.findings.read_all():
+        if finding.get("type") == "WILDCARD_ROUTING":
+            asset = finding.get("asset")
+            if asset:
+                wildcard_services.add(asset)
+
+    def _service_is_wildcard(url: str) -> bool:
+        return any(url.startswith(svc) for svc in wildcard_services)
+
     candidates: list[str] = []
     seen: set[str] = set()
     for url_record in ctx.stores.urls.read_all():
@@ -214,11 +228,24 @@ def _run_arjun(ctx) -> int:
         if endpoint in seen:
             continue
         seen.add(endpoint)
-        if scan_all or _endpoint_is_param_likely(url):
+        on_wildcard = _service_is_wildcard(url)
+        if scan_all:
+            candidates.append(endpoint)
+        elif on_wildcard:
+            # Only URLs that already carried a `?` are worth trying.
+            if "?" in url:
+                candidates.append(endpoint)
+        elif _endpoint_is_param_likely(url):
             candidates.append(endpoint)
 
     if not candidates:
-        console.print("  [dim]Arjun: no param-likely endpoints to scan[/dim]")
+        if wildcard_services:
+            console.print(
+                "  [dim]Arjun: target has wildcard routing and no URLs with "
+                "query strings — skipping to avoid fruitless timeouts[/dim]"
+            )
+        else:
+            console.print("  [dim]Arjun: no param-likely endpoints to scan[/dim]")
         return 0
 
     targets = candidates[:cap]

@@ -155,12 +155,36 @@ def doctor():
         tool_path = shutil.which(tool_name)
         available = tool_path is not None
         version = runner.get_version(tool_name) if available else None
+        # For tools where ReconX registered a signature (httpx, subfinder,
+        # nuclei, katana, finalrecon), verify the binary on PATH really
+        # is the upstream tool and not a same-name impostor like
+        # python3-httpx. Tools without a signature pass identity by default.
+        identity_ok = runner.identity_ok(tool_name) if available else False
 
-        if available:
+        if available and identity_ok:
             ver_str = f" ({version})" if version else ""
             console.print(f"  [green]✓ PASS[/green]  {tool_name}{ver_str} — {desc}")
             console.print(f"           [dim]→ {tool_path}[/dim]")
             results["pass"] += 1
+        elif available and not identity_ok:
+            # Binary is on PATH but it's the wrong tool. Treat as a
+            # failure at this tool's severity level so downstream runs
+            # don't silently produce empty output.
+            ver_str = f" ({version})" if version else ""
+            severity_color = {"required": "red", "recommended": "yellow"}.get(level, "white")
+            tag = {"required": "✗ FAIL", "recommended": "⚠ WARN"}.get(level, "○ SKIP")
+            console.print(
+                f"  [{severity_color}]{tag}[/{severity_color}]  "
+                f"{tool_name}{ver_str} — [bold]wrong binary on PATH[/bold] ({desc})"
+            )
+            console.print(f"           [dim]→ {tool_path}[/dim]")
+            console.print(
+                f"           [dim]Found a different `{tool_name}` "
+                f"(e.g. python3-httpx installs a `httpx` CLI that is not "
+                f"ProjectDiscovery httpx).[/dim]"
+            )
+            console.print(f"           [dim]Install: {install_hint}[/dim]")
+            results["fail" if level == "required" else "warn"] += 1
         elif level == "required":
             console.print(f"  [red]✗ FAIL[/red]  {tool_name} — {desc} [red](REQUIRED)[/red]")
             console.print(f"           [dim]Install: {install_hint}[/dim]")

@@ -119,43 +119,61 @@ def _validate_with_httpx_cli(ctx, targets) -> int:
 
 
 def _validate_with_python(ctx, targets) -> int:
-    """Fallback: validate using Python httpx library."""
+    """
+    Fallback: validate using Python httpx library, in parallel.
+
+    Each target hits its own connect/read timeout, so a serial loop pays
+    that cost N times on down ports. We fan out probes across a thread
+    pool bounded by ``network.concurrency`` and keep the rate limiter in
+    the hot path so the overall pace is still governed. Writes to the
+    store still happen on the main thread — JsonlStore isn't thread safe.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from urllib.parse import urlparse
     import httpx as httpx_lib
 
-    alive_count = 0
-    for target_url in targets:
+    timeout = ctx.config.get("network.timeout", 10)
+    insecure = ctx.config.get("http.insecure", False)
+    # Cap the pool: parallelism is bounded by either the user's
+    # configured concurrency or the number of targets (whichever is
+    # smaller), with an absolute ceiling so we don't DoS the target.
+    workers = min(len(targets), ctx.config.get("network.concurrency", 20), 50)
+
+    def _probe(target_url: str):
         ctx.rate_limiter.acquire()
         try:
             resp = httpx_lib.get(
                 target_url,
-                timeout=ctx.config.get("network.timeout", 10),
+                timeout=timeout,
                 follow_redirects=True,
-                verify=not ctx.config.get("http.insecure", False),
+                verify=not insecure,
             )
-
-            from urllib.parse import urlparse
-            parsed = urlparse(target_url)
-
-            service_record = {
-                "service": target_url,
-                "host": parsed.hostname or "",
-                "ip": "",
-                "status": resp.status_code,
-                "final_url": str(resp.url),
-                "title": _extract_title(resp.text),
-                "headers": dict(resp.headers),
-                "tls": {},
-                "tech": [],
-                "server": resp.headers.get("server", ""),
-                "content_length": len(resp.content),
-                "alive": True,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-            if ctx.stores.services.add(service_record):
-                alive_count += 1
-
         except Exception:
-            continue
+            return None
+        parsed = urlparse(target_url)
+        return {
+            "service": target_url,
+            "host": parsed.hostname or "",
+            "ip": "",
+            "status": resp.status_code,
+            "final_url": str(resp.url),
+            "title": _extract_title(resp.text),
+            "headers": dict(resp.headers),
+            "tls": {},
+            "tech": [],
+            "server": resp.headers.get("server", ""),
+            "content_length": len(resp.content),
+            "alive": True,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    alive_count = 0
+    with ThreadPoolExecutor(max_workers=max(workers, 1)) as pool:
+        futures = [pool.submit(_probe, t) for t in targets]
+        for fut in as_completed(futures):
+            record = fut.result()
+            if record and ctx.stores.services.add(record):
+                alive_count += 1
 
     console.print(f"  [dim]Alive services: {alive_count}[/dim]")
     return alive_count
