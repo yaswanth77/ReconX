@@ -22,11 +22,17 @@ _log = logging.getLogger(__name__)
 _CHARS_PER_TOKEN = 4
 
 
+def _sanitize_str(value: str) -> str:
+    """Strip ASCII control chars from one string (keep \\n and \\t)."""
+    return "".join(ch for ch in value if ch == "\n" or ch == "\t" or ord(ch) >= 32)
+
+
 def _sanitize_for_prompt(value) -> str:
     """
-    Strip ASCII control chars from untrusted strings before embedding them
-    in a prompt. Keeps the content visible to the model without letting
-    targets smuggle in escape sequences or multi-line instruction overrides.
+    Strip ASCII control chars from an untrusted value, returning a STRING.
+    Use for scalar prompt fields (title, domain). Keeps the content visible
+    to the model without letting targets smuggle in escape sequences or
+    multi-line instruction overrides.
     """
     if value is None:
         return ""
@@ -35,7 +41,26 @@ def _sanitize_for_prompt(value) -> str:
             value = json.dumps(value, default=str, ensure_ascii=False)
         except Exception:
             value = str(value)
-    return "".join(ch for ch in value if ch == "\n" or ch == "\t" or ord(ch) >= 32)
+    return _sanitize_str(value)
+
+
+def _sanitize_struct(value):
+    """
+    Recursively strip control chars from every string inside a structure
+    while PRESERVING its shape (dict stays a dict, list stays a list).
+
+    Prompt builders index into these structures (e.g. headers.get('server'),
+    tech_stack.get('tech')), so they must not be flattened to a string. This
+    is the sanitizer to use for any dict/list of target-derived data; the
+    scalar variant above is for plain string fields only.
+    """
+    if isinstance(value, str):
+        return _sanitize_str(value)
+    if isinstance(value, dict):
+        return {_sanitize_struct(k): _sanitize_struct(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_struct(v) for v in value]
+    return value  # numbers, bools, None pass through unchanged
 
 
 class AIEngine:
@@ -190,9 +215,11 @@ class AIEngine:
 
     def analyze_target(self, tech_stack: dict, headers: dict, title: str) -> dict | None:
         """Post-fingerprint: analyze tech and suggest attack vectors."""
+        # tech_stack and headers are dicts the prompt builder indexes into, so
+        # sanitize their contents in place rather than flattening to a string.
         system, user = prompts.target_analysis_prompt(
-            _sanitize_for_prompt(tech_stack),
-            _sanitize_for_prompt(headers),
+            _sanitize_struct(tech_stack),
+            _sanitize_struct(headers),
             _sanitize_for_prompt(title),
         )
         result = self._call(system, user)
@@ -203,8 +230,8 @@ class AIEngine:
     def generate_wordlist(self, tech_stack: list[str], existing_paths: list[str]) -> list[str]:
         """Generate dynamic paths based on detected tech."""
         system, user = prompts.dynamic_wordlist_prompt(
-            [_sanitize_for_prompt(t) for t in tech_stack],
-            [_sanitize_for_prompt(p) for p in existing_paths],
+            _sanitize_struct(tech_stack),
+            _sanitize_struct(existing_paths),
         )
         result = self._call(system, user)
         if result and "paths" in result:
@@ -217,7 +244,7 @@ class AIEngine:
         """Score parameters by injection risk."""
         if not params:
             return []
-        system, user = prompts.param_risk_scoring_prompt(params)
+        system, user = prompts.param_risk_scoring_prompt(_sanitize_struct(params))
         result = self._call(system, user)
         if result and "scored_params" in result:
             scored = result["scored_params"]
@@ -229,7 +256,7 @@ class AIEngine:
         """Triage raw findings for severity and false-positive likelihood."""
         if not findings:
             return []
-        system, user = prompts.finding_triage_prompt(findings)
+        system, user = prompts.finding_triage_prompt(_sanitize_struct(findings))
         result = self._call(system, user)
         if result and "triaged" in result:
             triaged = result["triaged"]
@@ -239,7 +266,9 @@ class AIEngine:
 
     def select_nuclei_templates(self, tech_stack: list[str], services: list[dict]) -> list[str]:
         """Select relevant Nuclei template tags based on fingerprint."""
-        system, user = prompts.nuclei_template_selection_prompt(tech_stack, services)
+        system, user = prompts.nuclei_template_selection_prompt(
+            _sanitize_struct(tech_stack), _sanitize_struct(services)
+        )
         result = self._call(system, user)
         if result and "selected_tags" in result:
             tags = result["selected_tags"]
@@ -256,7 +285,9 @@ class AIEngine:
 
     def generate_summary(self, data_summary: dict, key_findings: list[dict]) -> str | None:
         """Generate AI-written attack narrative for the report."""
-        system, user = prompts.recon_summary_prompt(data_summary, key_findings)
+        system, user = prompts.recon_summary_prompt(
+            _sanitize_struct(data_summary), _sanitize_struct(key_findings)
+        )
         result = self._call(system, user, json_mode=False)
         if result and "text" in result:
             console.print("  [cyan]🤖 AI generated recon summary[/cyan]")
@@ -267,7 +298,7 @@ class AIEngine:
         """Generate context-aware subdomain candidates."""
         system, user = prompts.subdomain_generation_prompt(
             _sanitize_for_prompt(domain),
-            [_sanitize_for_prompt(s) for s in known_subs],
+            _sanitize_struct(known_subs),
         )
         result = self._call(system, user)
         if result and "candidates" in result:
