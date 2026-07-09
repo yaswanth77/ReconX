@@ -78,6 +78,7 @@ def _validate_with_httpx_cli(ctx, targets) -> int:
             "-silent",
             "-timeout", str(ctx.config.get("network.timeout", 30)),
             "-threads", str(min(ctx.config.get("network.concurrency", 50), 100)),
+            "-rate-limit", str(ctx.config.get("network.rate_limit_rps", 10)),
             "-follow-redirects",
             "-status-code",
             "-title",
