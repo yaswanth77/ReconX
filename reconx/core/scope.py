@@ -62,13 +62,31 @@ class Scope:
             ext.lower() for ext in out_of_scope.get("extensions", [])
         ]
 
+    @staticmethod
+    def _host_matches_exclusion(host: str, pattern: str) -> bool:
+        """True if `host` is excluded by an out_of_scope host pattern.
+
+        Glob patterns (containing `*`, `?`, or `[`) keep their fnmatch behavior,
+        so `*.internal.example.com`, `dev.*`, and `dev-*` work as before. A plain
+        hostname pattern is matched SUBDOMAIN-AWARE: it excludes the host itself
+        and any subdomain of it, mirroring how roots are included. This is why a
+        `academy.example.com` exclusion also excludes `studio.academy.example.com`
+        (previously it did not, an out-of-scope leak).
+        """
+        pattern = (pattern or "").strip().lower().lstrip(".")
+        if not pattern:
+            return False
+        if any(ch in pattern for ch in "*?["):
+            return fnmatch.fnmatch(host, pattern)
+        return host == pattern or host.endswith("." + pattern)
+
     def host_in_scope(self, host: str) -> bool:
         """Check if a hostname is within scope."""
         host = normalize_host(host)
 
-        # Check exclusion patterns first
+        # Check exclusion patterns first (subdomain-aware for plain patterns)
         for pattern in self.exclude_host_patterns:
-            if fnmatch.fnmatch(host, pattern):
+            if self._host_matches_exclusion(host, pattern):
                 return False
 
         # Check if host matches any root
