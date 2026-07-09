@@ -257,7 +257,8 @@ def _run_arjun(ctx) -> int:
     else:
         console.print(f"  [dim]Running Arjun on {len(targets)} filtered endpoints...[/dim]")
 
-    per_call_timeout = ctx.config.get("params.arjun_timeout", 60)
+    per_call_timeout = ctx.config.get("params.arjun_timeout", 30)
+    rps = int(ctx.config.get("network.rate_limit_rps", 10))
     added = 0
 
     for endpoint in targets:
@@ -266,7 +267,7 @@ def _run_arjun(ctx) -> int:
         # target / wildcard routing), so retrying just multiplies the wait.
         result = ctx.runner.run(
             "arjun",
-            ["-u", endpoint, "--stable", "-oJ", "-"],
+            ["-u", endpoint, "--stable", "--rate-limit", str(rps), "-oJ", "-"],
             timeout=per_call_timeout,
             attempts=1,
         )

@@ -100,36 +100,40 @@ def run(ctx):
     console.print(f"  [dim]Unique candidates to resolve: {len(unique_subs)}[/dim]")
 
     import dns.resolver
+    from concurrent.futures import ThreadPoolExecutor
     resolver = dns.resolver.Resolver()
     resolver.nameservers = ctx.config.get("dns.resolvers", ["8.8.8.8", "1.1.1.1"])
     resolver.timeout = ctx.config.get("dns.query_timeout", 3)
     resolver.lifetime = ctx.config.get("dns.lifetime", 5)
 
-    resolved_count = 0
-    for sub in unique_subs:
-        if not ctx.scope.host_in_scope(sub):
-            continue
+    # DNS resolution goes to the configured resolvers, NOT the target, so it is
+    # safe to run concurrently and it does not consume the target rps budget.
+    # Resolving thousands of candidates one at a time was the main subs bottleneck.
+    in_scope_subs = [s for s in unique_subs if ctx.scope.host_in_scope(s)]
 
-        a_records: list[str] = []
+    def _resolve(sub: str):
         try:
-            answers = resolver.resolve(sub, "A")
-            a_records = [str(r) for r in answers]
+            return sub, [str(r) for r in resolver.resolve(sub, "A")]
         except Exception:
-            pass
+            return sub, []
 
-        if not a_records:
-            continue
+    workers = min(int(ctx.config.get("dns.resolve_workers", 50)), 100)
+    resolved_count = 0
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        for sub, a_records in pool.map(_resolve, in_scope_subs):
+            if not a_records:
+                continue
 
-        host_record = {
-            "host": sub,
-            "source": sorted(sources[sub]),
-            "dns": {"a": a_records},
-            "wildcard_suspect": False,
-            "first_seen_stage": "subs",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
+            host_record = {
+                "host": sub,
+                "source": sorted(sources[sub]),
+                "dns": {"a": a_records},
+                "wildcard_suspect": False,
+                "first_seen_stage": "subs",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
 
-        if ctx.stores.hosts.add(host_record):
-            resolved_count += 1
+            if ctx.stores.hosts.add(host_record):
+                resolved_count += 1
 
     console.print(f"  [dim]Resolved and stored: {resolved_count} new hosts[/dim]")
