@@ -50,6 +50,9 @@ TIME_PAYLOADS = {
 TIME_THRESHOLD = 4.5  # seconds
 
 
+from reconx.core import http as rx_http
+
+
 def run(ctx):
     """Execute SQLi detection."""
     import httpx as httpx_lib
@@ -89,8 +92,8 @@ def run(ctx):
                 ctx.rate_limiter.acquire()
                 try:
                     test_url = f"{endpoint}?{urlencode({param: payload})}"
-                    resp = httpx_lib.get(
-                        test_url, timeout=15, follow_redirects=True, verify=False
+                    resp = rx_http.get(ctx.config, 
+                        test_url, timeout=15, follow_redirects=True
                     )
 
                     if SQL_ERROR_RE.search(resp.text):
@@ -121,8 +124,8 @@ def run(ctx):
                 try:
                     test_url = f"{endpoint}?{urlencode({param: payload})}"
                     start = time.time()
-                    resp = httpx_lib.get(
-                        test_url, timeout=20, follow_redirects=True, verify=False
+                    resp = rx_http.get(ctx.config, 
+                        test_url, timeout=20, follow_redirects=True
                     )
                     elapsed = time.time() - start
 

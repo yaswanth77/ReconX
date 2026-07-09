@@ -25,6 +25,7 @@ DEFAULT_CONFIG = {
     "http": {
         "ports": [80, 443, 8080, 8443],
         "user_agent": "ReconX/1.0",
+        "headers": [],
         "proxy": None,
         "insecure": False,
     },

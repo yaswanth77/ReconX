@@ -13,6 +13,9 @@ console = Console()
 DOCUMENT_EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt"]
 
 
+from reconx.core import http as rx_http
+
+
 def run(ctx):
     """Execute metadata extraction."""
     import httpx as httpx_lib
@@ -41,7 +44,7 @@ def run(ctx):
     for url in doc_urls[:20]:  # Limit downloads
         ctx.rate_limiter.acquire()
         try:
-            resp = httpx_lib.get(url, timeout=30, follow_redirects=True, verify=False)
+            resp = rx_http.get(ctx.config, url, timeout=30, follow_redirects=True)
             if resp.status_code == 200:
                 filename = url.split("/")[-1].split("?")[0]
                 filepath = temp_dir / filename

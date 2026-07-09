@@ -12,6 +12,9 @@ import hashlib
 console = Console()
 
 
+from reconx.core import http as rx_http
+
+
 def run(ctx):
     """Execute virtual host discovery."""
     import httpx as httpx_lib
@@ -113,12 +116,11 @@ def _get_response_hash(base_url: str, host: str, ctx) -> str | None:
         parsed = urlparse(base_url)
         url = f"{parsed.scheme}://{parsed.hostname}:{parsed.port or (443 if parsed.scheme == 'https' else 80)}"
 
-        resp = httpx_lib.get(
+        resp = rx_http.get(ctx.config, 
             url,
             headers={"Host": host},
             timeout=10,
             follow_redirects=False,
-            verify=False,
         )
 
         # Hash: status + title + body length bucket (±100 chars)

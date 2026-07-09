@@ -24,6 +24,9 @@ import secrets
 console = Console()
 
 
+from reconx.core import http as rx_http
+
+
 def run(ctx):
     """Execute URL expansion with sub-stages."""
     services = ctx.stores.services.read_all()
@@ -72,8 +75,8 @@ def _get_wildcard_baseline(ctx, base_url: str) -> dict | None:
 
     try:
         ctx.rate_limiter.acquire()
-        resp = httpx_lib.get(
-            url, timeout=10, follow_redirects=False, verify=False
+        resp = rx_http.get(ctx.config, 
+            url, timeout=10, follow_redirects=False
         )
     except Exception:
         return None
@@ -137,8 +140,8 @@ def _fetch_robots(ctx, base_url: str) -> int:
     count = 0
     try:
         ctx.rate_limiter.acquire()
-        resp = httpx_lib.get(
-            f"{base_url}/robots.txt", timeout=10, follow_redirects=True, verify=False
+        resp = rx_http.get(ctx.config, 
+            f"{base_url}/robots.txt", timeout=10, follow_redirects=True
         )
         if resp.status_code == 200:
             for line in resp.text.splitlines():
@@ -205,7 +208,7 @@ def _fetch_wellknown(ctx, base_url: str, baseline: dict | None) -> int:
         ctx.rate_limiter.acquire()
         try:
             # GET instead of HEAD so we can compare bodies against the baseline.
-            resp = httpx_lib.get(url, timeout=10, follow_redirects=False, verify=False)
+            resp = rx_http.get(ctx.config, url, timeout=10, follow_redirects=False)
             if resp.status_code >= 400:
                 continue
             if _response_matches_baseline(resp, baseline):
@@ -267,7 +270,7 @@ def _crawl(ctx, base_url: str) -> int:
 
         ctx.rate_limiter.acquire()
         try:
-            resp = httpx_lib.get(url, timeout=15, follow_redirects=True, verify=False)
+            resp = rx_http.get(ctx.config, url, timeout=15, follow_redirects=True)
             content_type = resp.headers.get("content-type", "")
 
             if ctx.scope.url_in_scope(url) and ctx.stores.urls.add({
@@ -345,7 +348,7 @@ def _creepy_paths(ctx, base_url: str, baseline: dict | None) -> int:
         url = f"{base_url.rstrip('/')}{path}"
         ctx.rate_limiter.acquire()
         try:
-            resp = httpx_lib.get(url, timeout=10, follow_redirects=False, verify=False)
+            resp = rx_http.get(ctx.config, url, timeout=10, follow_redirects=False)
             if resp.status_code >= 400:
                 continue
             if _response_matches_baseline(resp, baseline):

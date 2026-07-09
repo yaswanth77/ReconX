@@ -24,10 +24,57 @@ class ToolRunner:
         print(result.stdout)
     """
 
-    def __init__(self, log_dir: str | Path | None = None):
+    # HTTP-aware external tools that make TARGET requests. Each entry says how that
+    # tool takes custom headers and a proxy, since the flags differ. Anything here
+    # gets the configured User-Agent, custom headers, and proxy injected on every
+    # invocation, so rules-of-engagement (mandatory UA/header, mandatory proxy) are
+    # honored everywhere, not only where a stage happened to wire them. Passive or
+    # third-party tools (subfinder, gau, waybackurls, theHarvester, exiftool,
+    # paramspider) are intentionally absent: they are not target traffic.
+    #   hstyle "H":     repeatable -H "Name: Value" (httpx/nuclei/katana/ffuf)
+    #   hstyle "arjun": one --headers with newline-joined "Name: Value" lines
+    _HTTP_TOOLS = {
+        "httpx": {"proxy": "-http-proxy", "hstyle": "H"},
+        "nuclei": {"proxy": "-proxy", "hstyle": "H"},
+        "katana": {"proxy": "-proxy", "hstyle": "H"},
+        "ffuf": {"proxy": "-x", "hstyle": "H"},
+        "arjun": {"proxy": "-oB", "hstyle": "arjun"},
+    }
+
+    def __init__(self, log_dir: str | Path | None = None, config=None):
         self.log_dir = Path(log_dir) if log_dir else None
+        self.config = config
         if self.log_dir:
             self.log_dir.mkdir(parents=True, exist_ok=True)
+
+    def _http_flags(self, tool: str, args: list[str]) -> list[str]:
+        """UA + custom headers + proxy flags for an HTTP-aware tool.
+
+        Skips a flag already present in the caller's args (so a stage that set its
+        own proxy, e.g. the katana adapter, is not double-flagged).
+        """
+        spec = self._HTTP_TOOLS.get(tool)
+        if spec is None or self.config is None:
+            return []
+        proxy_flag, hstyle = spec["proxy"], spec["hstyle"]
+        extra: list[str] = []
+        ua = self.config.get("http.user_agent")
+        custom = [h for h in (self.config.get("http.headers", []) or []) if h]
+        header_lines = ([f"User-Agent: {ua}"] if ua else []) + custom
+
+        if hstyle == "H":
+            if header_lines and "-H" not in args:
+                for line in header_lines:
+                    extra += ["-H", line]
+        elif hstyle == "arjun":
+            # arjun takes one --headers with newline-separated "Name: Value" lines.
+            if header_lines and "--headers" not in args:
+                extra += ["--headers", "\n".join(header_lines)]
+
+        proxy = self.config.get("http.proxy")
+        if proxy and proxy_flag not in args and "-proxy" not in args:
+            extra += [proxy_flag, proxy]
+        return extra
 
     # Expected version-string signatures so we don't mistake a same-name
     # binary (e.g. python3-httpx's `httpx` CLI) for the ProjectDiscovery one.
@@ -133,7 +180,7 @@ class ToolRunner:
             attempts = retries
         if attempts < 1:
             attempts = 1
-        cmd = [tool] + args
+        cmd = [tool] + args + self._http_flags(tool, args)
         cmd_str = " ".join(cmd)
         last_error = None
 

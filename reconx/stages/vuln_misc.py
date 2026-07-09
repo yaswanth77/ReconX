@@ -12,6 +12,9 @@ import re
 console = Console()
 
 
+from reconx.core import http as rx_http
+
+
 def run(ctx):
     """Execute miscellaneous vulnerability checks."""
     import httpx as httpx_lib
@@ -56,8 +59,8 @@ def _check_open_redirect(ctx, params, httpx_lib) -> int:
             ctx.rate_limiter.acquire()
             try:
                 test_url = f"{endpoint}?{urlencode({param: test_domain})}"
-                resp = httpx_lib.get(
-                    test_url, timeout=15, follow_redirects=False, verify=False
+                resp = rx_http.get(ctx.config, 
+                    test_url, timeout=15, follow_redirects=False
                 )
 
                 location = resp.headers.get("location", "")
@@ -113,8 +116,8 @@ def _check_ssrf(ctx, params, httpx_lib) -> int:
                 ctx.rate_limiter.acquire()
                 try:
                     test_url = f"{endpoint}?{urlencode({param: payload})}"
-                    resp = httpx_lib.get(
-                        test_url, timeout=15, follow_redirects=True, verify=False
+                    resp = rx_http.get(ctx.config, 
+                        test_url, timeout=15, follow_redirects=True
                     )
 
                     # Look for internal content indicators
@@ -171,8 +174,8 @@ def _check_ssti(ctx, params, httpx_lib) -> int:
                 tested += 1
                 try:
                     test_url = f"{endpoint}?{urlencode({param: payload})}"
-                    resp = httpx_lib.get(
-                        test_url, timeout=15, follow_redirects=True, verify=False
+                    resp = rx_http.get(ctx.config, 
+                        test_url, timeout=15, follow_redirects=True
                     )
 
                     if expected in resp.text and payload not in resp.text:
