@@ -242,6 +242,15 @@ def _fetch_wellknown(ctx, base_url: str, baseline: dict | None) -> int:
 
 def _crawl(ctx, base_url: str) -> int:
     """Depth-limited same-origin crawl. Prefers katana when installed."""
+    # Do not crawl an out-of-scope seed. A validated service can carry an
+    # OUT-OF-SCOPE final_url when an in-scope host redirects off-scope (e.g.
+    # shop.example.com -> example.myshopify.com). Storage was already scope
+    # filtered, but the crawl itself is active traffic and must stay in scope.
+    from urllib.parse import urlparse as _up
+    seed_host = _up(base_url).hostname or ""
+    if seed_host and not ctx.scope.host_in_scope(seed_host):
+        console.print(f"  [dim]  crawl skipped (out of scope): {seed_host}[/dim]")
+        return 0
     try:
         from reconx.adapters import katana
         if katana.is_available(ctx):

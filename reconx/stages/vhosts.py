@@ -10,6 +10,7 @@ from rich.console import Console
 import hashlib
 
 console = Console()
+from reconx.core.normalize import safe_port
 
 
 from reconx.core import http as rx_http
@@ -114,7 +115,7 @@ def _get_response_hash(base_url: str, host: str, ctx) -> str | None:
 
     try:
         parsed = urlparse(base_url)
-        url = f"{parsed.scheme}://{parsed.hostname}:{parsed.port or (443 if parsed.scheme == 'https' else 80)}"
+        url = f"{parsed.scheme}://{parsed.hostname}:{safe_port(parsed) or (443 if parsed.scheme == 'https' else 80)}"
 
         resp = rx_http.get(ctx.config, 
             url,

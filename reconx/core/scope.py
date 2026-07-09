@@ -9,7 +9,7 @@ import fnmatch
 import yaml
 from pathlib import Path
 from urllib.parse import urlparse
-from .normalize import normalize_host, normalize_url
+from .normalize import normalize_host, normalize_url, safe_port
 
 
 class Scope:
@@ -113,7 +113,7 @@ class Scope:
             return False
 
         # Port check
-        port = parsed.port
+        port = safe_port(parsed)
         if port is None:
             port = 80 if parsed.scheme == "http" else 443
         if port not in self.allowed_ports:
@@ -136,7 +136,7 @@ class Scope:
         """Check if a service (scheme://host:port) is in scope."""
         parsed = urlparse(service)
         hostname = parsed.hostname or ""
-        port = parsed.port
+        port = safe_port(parsed)
         if port is None:
             port = 80 if parsed.scheme == "http" else 443
 

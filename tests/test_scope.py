@@ -80,3 +80,17 @@ def test_scheduler_rejects_unknown_stage_names():
     with pytest.raises(ValueError) as e:
         PipelineScheduler.run(sched, stages=["subdomains"])
     assert "Unknown stage" in str(e.value) and "subs" in str(e.value)
+
+
+def test_malformed_port_does_not_crash_scope(tmp_path):
+    # Regression: parsed.port raised ValueError on a bad port, crashing scope
+    # checks and the katana adapter. safe_port must swallow it.
+    s = _scope(tmp_path, """
+        in_scope:
+          roots: [example.com]
+          include_subdomains: true
+    """)
+    # these must not raise
+    assert s.url_in_scope("https://api.example.com:/x") in (True, False)
+    assert s.url_in_scope("https://api.example.com:abc/x") in (True, False)
+    assert s.service_in_scope("https://api.example.com:/") in (True, False)

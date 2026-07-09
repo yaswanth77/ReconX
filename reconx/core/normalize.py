@@ -5,14 +5,27 @@ Every piece of data flows through these functions before storage,
 ensuring a single canonical form and killing redundancy upstream.
 """
 
-from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 import re
+from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 
 try:
     import tldextract
     _TLDEXTRACT = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None)
 except ImportError:
     _TLDEXTRACT = None
+
+
+def safe_port(parsed):
+    """parsed.port, but None instead of a crash on a malformed port.
+
+    urllib raises ValueError ("Port could not be cast to integer value") for a
+    host like `example.com:` or `example.com:abc`, which otherwise takes down
+    normalization and scope checks (and the katana adapter) on one bad URL.
+    """
+    try:
+        return parsed.port
+    except ValueError:
+        return None
 
 
 def normalize_host(host: str) -> str:
@@ -47,7 +60,7 @@ def normalize_url(url: str) -> str:
     host = normalize_host(parsed.hostname or "")
 
     # Port handling — strip defaults
-    port = parsed.port
+    port = safe_port(parsed)
     if port == 80 and scheme == "http":
         port = None
     elif port == 443 and scheme == "https":
@@ -88,7 +101,7 @@ def normalize_service(url: str) -> str:
     scheme = parsed.scheme.lower()
     host = normalize_host(parsed.hostname or "")
 
-    port = parsed.port
+    port = safe_port(parsed)
     if port == 80 and scheme == "http":
         port = None
     elif port == 443 and scheme == "https":
