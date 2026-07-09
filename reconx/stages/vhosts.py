@@ -59,28 +59,44 @@ def run(ctx):
     )
 
     new_vhosts = 0
+    seen_vhosts: set[str] = set()
     for ip, svcs in ip_services.items():
         svc = svcs[0]  # Use first service as baseline
         base_url = svc.get("service", "")
         if not base_url:
             continue
 
-        # Get baseline response hash
-        baseline_hash = _get_response_hash(base_url, svc.get("host", ""), ctx)
-        if not baseline_hash:
+        # Vhost discovery by response-diff is only reliable when responses are
+        # STABLE. On a target with dynamic content or a catch-all, every Host
+        # yields a slightly different response, which flags the whole wordlist
+        # (this produced 61 false positives on a real target). Guard with two
+        # controls, both required to be reproducible:
+        #  - baseline: the real Host, hashed twice; skip the IP if it is unstable.
+        #  - garbage: a Host that cannot exist, hashed twice; skip the IP if the
+        #    catch-all itself is unstable (we then cannot tell signal from noise).
+        # A candidate is accepted only if it is itself stable AND differs from
+        # both the baseline and the garbage control.
+        baseline_hash = _stable_hash(base_url, svc.get("host", ""), ctx)
+        garbage_hash = _stable_hash(
+            base_url, f"nonexistent-vhost-control-check.{ctx.target}", ctx
+        )
+        if not baseline_hash or not garbage_hash:
+            console.print(f"  [dim]  vhost: {ip} responds unstably, skipping (unreliable)[/dim]")
             continue
 
         for candidate in vhost_candidates:
             vhost = f"{candidate}.{ctx.target}"
-            ctx.rate_limiter.acquire()
+            if vhost in seen_vhosts:
+                continue
 
-            # Get response with candidate Host header
-            candidate_hash = _get_response_hash(base_url, vhost, ctx)
+            # Stable hash across repeat requests; None if the candidate is unstable.
+            candidate_hash = _stable_hash(base_url, vhost, ctx)
             if not candidate_hash:
                 continue
 
-            # Evidence-based acceptance: only if meaningfully different
-            if candidate_hash != baseline_hash:
+            # Accept only if reproducibly different from BOTH controls.
+            if candidate_hash != baseline_hash and candidate_hash != garbage_hash:
+                seen_vhosts.add(vhost)
                 if ctx.scope.host_in_scope(vhost):
                     ctx.stores.hosts.add({
                         "host": vhost,
@@ -93,12 +109,13 @@ def run(ctx):
 
                     ctx.stores.findings.add({
                         "type": "VHOST_DISCOVERED",
-                        "severity": "medium",
+                        "severity": "info",
                         "asset": vhost,
                         "evidence": {
                             "ip": ip,
                             "base_host": svc.get("host", ""),
-                            "response_diff": True,
+                            "differs_from_baseline_and_control": True,
+                            "note": "unverified: confirm the vhost serves distinct content before reporting",
                         },
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
@@ -106,6 +123,26 @@ def run(ctx):
                     console.print(f"  [green]✓ VHost found: {vhost}[/green]")
 
     console.print(f"  [dim]New vhosts discovered: {new_vhosts}[/dim]")
+
+
+def _stable_hash(base_url: str, host: str, ctx, tries: int = 2) -> str | None:
+    """Response fingerprint only if it reproduces across `tries` requests.
+
+    Returns the hash when every attempt agrees, else None (the response is
+    unstable/dynamic and cannot be used as a reliable vhost signal). This is what
+    stops dynamic pages and unstable catch-alls from flooding false positives.
+    """
+    first = None
+    for _ in range(max(1, tries)):
+        ctx.rate_limiter.acquire()
+        h = _get_response_hash(base_url, host, ctx)
+        if h is None:
+            return None
+        if first is None:
+            first = h
+        elif h != first:
+            return None
+    return first
 
 
 def _get_response_hash(base_url: str, host: str, ctx) -> str | None:
@@ -124,14 +161,22 @@ def _get_response_hash(base_url: str, host: str, ctx) -> str | None:
             follow_redirects=False,
         )
 
-        # Hash: status + title + body length bucket (±100 chars)
+        # Fingerprint: status + title + redirect Location host. Deliberately NOT
+        # body length: dynamic pages (tokens, timestamps, IDs) shift length on
+        # every request, which made near-identical responses hash differently and
+        # produced a flood of false vhosts. Status + title + redirect target is
+        # stable and still distinguishes a genuinely different vhost.
         title = ""
         import re
         match = re.search(r"<title[^>]*>(.*?)</title>", resp.text, re.IGNORECASE | re.DOTALL)
         if match:
             title = match.group(1).strip()
+        location = ""
+        if resp.is_redirect or 300 <= resp.status_code < 400:
+            from urllib.parse import urlparse
+            location = urlparse(resp.headers.get("location", "")).hostname or ""
 
-        content = f"{resp.status_code}|{title}|{len(resp.content) // 100}"
+        content = f"{resp.status_code}|{title}|{location}"
         return hashlib.md5(content.encode()).hexdigest()
 
     except Exception:

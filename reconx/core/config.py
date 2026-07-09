@@ -38,7 +38,7 @@ DEFAULT_CONFIG = {
         "wordlist": None,
     },
     "vhosts": {
-        "enabled": True,
+        "enabled": False,
         "wordlist": "configs/wordlists/vhosts.txt",
     },
     "crawl": {
