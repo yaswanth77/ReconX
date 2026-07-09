@@ -24,6 +24,9 @@ XSS_PAYLOADS = [
 XSS_CANARY = "reconx_xss_"
 
 
+from reconx.core import http as rx_http
+
+
 def run(ctx):
     """Execute XSS detection on discovered params."""
     import httpx as httpx_lib
@@ -61,8 +64,8 @@ def run(ctx):
             try:
                 # Test with canary first (reflection check)
                 test_url = f"{endpoint}?{urlencode({param: canary})}"
-                resp = httpx_lib.get(
-                    test_url, timeout=15, follow_redirects=True, verify=False
+                resp = rx_http.get(ctx.config, 
+                    test_url, timeout=15, follow_redirects=True
                 )
 
                 if canary in resp.text:
@@ -70,8 +73,8 @@ def run(ctx):
                     for payload in XSS_PAYLOADS[:3]:
                         ctx.rate_limiter.acquire()
                         xss_url = f"{endpoint}?{urlencode({param: payload})}"
-                        xss_resp = httpx_lib.get(
-                            xss_url, timeout=15, follow_redirects=True, verify=False
+                        xss_resp = rx_http.get(ctx.config, 
+                            xss_url, timeout=15, follow_redirects=True
                         )
 
                         if payload in xss_resp.text:

@@ -31,7 +31,10 @@ subs:
   brute_force: false
 
 vhosts:
-  enabled: true
+  # Off by default: response-diff vhost discovery is unreliable on real
+  # targets (dynamic content, catch-alls, per-Host responses) and floods false
+  # positives. Enable explicitly only when you know the target has real vhosts.
+  enabled: false
 
 crawl:
   max_depth: 3

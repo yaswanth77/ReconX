@@ -35,3 +35,6 @@ runs/
 # Temp
 tmp/
 temp/
+
+runs/
+*-scope.yaml

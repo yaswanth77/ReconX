@@ -22,6 +22,41 @@ def test_host_in_scope_root_and_subdomain(tmp_path):
     assert not s.host_in_scope("example.org")
 
 
+def test_plain_exclusion_is_subdomain_aware(tmp_path):
+    # A plain host_pattern must exclude the host AND its subdomains.
+    s = _scope(tmp_path, """
+        in_scope:
+          roots:
+            - example.com
+          include_subdomains: true
+        out_of_scope:
+          host_patterns:
+            - academy.example.com
+    """)
+    assert not s.host_in_scope("academy.example.com")
+    assert not s.host_in_scope("studio.academy.example.com")   # regression: used to leak
+    assert s.host_in_scope("api.example.com")                  # unrelated sub still in scope
+
+
+def test_glob_exclusion_behavior_preserved(tmp_path):
+    # Existing glob patterns must keep matching exactly as before.
+    s = _scope(tmp_path, """
+        in_scope:
+          roots:
+            - example.com
+          include_subdomains: true
+        out_of_scope:
+          host_patterns:
+            - "*.internal.example.com"
+            - "dev-*"
+    """)
+    assert not s.host_in_scope("db.internal.example.com")
+    assert not s.host_in_scope("dev-api.example.com")
+    assert s.host_in_scope("prod-api.example.com")
+    # A glob is not over-eager: internal.example.com itself is not matched by *.internal.example.com
+    assert s.host_in_scope("internal.example.com")
+
+
 def test_url_in_scope_enforces_port_and_extension(tmp_path):
     s = _scope(tmp_path, """
         in_scope:
@@ -35,3 +70,27 @@ def test_url_in_scope_enforces_port_and_extension(tmp_path):
     assert s.url_in_scope("https://api.example.com/a")
     assert not s.url_in_scope("https://api.example.com:8443/a")
     assert not s.url_in_scope("https://api.example.com/logo.png")
+
+
+def test_scheduler_rejects_unknown_stage_names():
+    # Regression: unknown --stages used to run zero stages and report success.
+    import pytest
+    from reconx.core.scheduler import PipelineScheduler
+    sched = PipelineScheduler.__new__(PipelineScheduler)  # validation runs before ctx use
+    with pytest.raises(ValueError) as e:
+        PipelineScheduler.run(sched, stages=["subdomains"])
+    assert "Unknown stage" in str(e.value) and "subs" in str(e.value)
+
+
+def test_malformed_port_does_not_crash_scope(tmp_path):
+    # Regression: parsed.port raised ValueError on a bad port, crashing scope
+    # checks and the katana adapter. safe_port must swallow it.
+    s = _scope(tmp_path, """
+        in_scope:
+          roots: [example.com]
+          include_subdomains: true
+    """)
+    # these must not raise
+    assert s.url_in_scope("https://api.example.com:/x") in (True, False)
+    assert s.url_in_scope("https://api.example.com:abc/x") in (True, False)
+    assert s.service_in_scope("https://api.example.com:/") in (True, False)

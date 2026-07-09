@@ -112,7 +112,7 @@ OSINT (Emails, Metadata, GitHub) → Vuln Scan (Nuclei, XSS, SQLi, SSRF/SSTI)
 | 2 | `subs` | CT logs + subfinder | subdomain candidates |
 | 3 | `axfr` | Zone transfer attempts | |
 | 4 | `validate` | **gate** httpx probe, fails loudly on 0 alive | |
-| 5 | `vhosts` | Virtual host discovery | |
+| 5 | `vhosts` | Virtual host discovery (off by default: response-diff detection is noisy, opt in per profile) | |
 | 6 | `fingerprint` | Headers, favicon, tech stack | attack vector analysis |
 | 7 | `urls` | robots, well-known, katana, creepy (with wildcard filter) | dynamic wordlist |
 | 8 | `search` | gau + waybackurls | |
@@ -151,6 +151,28 @@ python -m reconx export --run ... --format burp       # csv, md, burp, nuclei, j
 python -m reconx diff --old run1 --new run2           # compare two runs
 python -m reconx --version
 ```
+
+### Rules-of-engagement flags (use these on real programs)
+
+Many bug bounty programs mandate an identifying User-Agent or header and a request rate cap,
+and want traffic through an intercept proxy. Set these on `run` (and on `stage`), they are applied
+to every request that touches the target: the external tools (httpx, nuclei, katana, ffuf, arjun)
+and ReconX's own fetches. Third-party OSINT calls (crt.sh, GitHub, the AI provider) are excluded
+on purpose, since they are not target traffic.
+
+```bash
+python -m reconx run --target x.com --scope s.yaml --profile normal \
+  --user-agent "BugBounty-yourhandle" \
+  --header "X-Bug-Bounty: yourhandle" \
+  --rate 10 \
+  --proxy http://127.0.0.1:8080          # optional, route through Caido/Burp to capture traffic
+```
+
+- `--user-agent` sets the exact User-Agent on every request.
+- `--header` adds a header (repeatable), for example an attribution header the program requires.
+- `--rate` caps requests/second (honored by httpx, nuclei, katana, and arjun).
+- `--proxy` routes all target traffic through your interception proxy.
+- Scope is enforced before any active step, and out-of-scope exclusions are subdomain-aware.
 
 
 ## AI providers

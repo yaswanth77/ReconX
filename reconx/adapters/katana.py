@@ -41,10 +41,14 @@ def crawl(ctx, base_url: str) -> int:
     same_origin = ctx.config.get("crawl.same_origin_only", True)
     headless = ctx.config.get("crawl.headless", False)
 
+    # -rl caps requests/second to the TARGET so katana honors the program rps cap.
+    # Without it, -c fired that many concurrent requests with no rate bound.
+    rps = int(ctx.config.get("network.rate_limit_rps", 10))
     args = [
         "-u", base_url,
         "-d", str(max_depth),
         "-c", str(concurrency),
+        "-rl", str(rps),
         "-jc",          # parse inline + external JS for endpoints (the SPA win)
         "-kf", "all",   # pull URLs from robots, sitemap, .js sourcemaps, etc.
         "-jsonl",       # one JSON object per line → carries path+source+status

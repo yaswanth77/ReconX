@@ -12,6 +12,9 @@ import json
 console = Console()
 
 
+from reconx.core import http as rx_http
+
+
 def run(ctx):
     """Execute service validation using httpx."""
     hosts = ctx.stores.hosts.read_all()
@@ -75,6 +78,7 @@ def _validate_with_httpx_cli(ctx, targets) -> int:
             "-silent",
             "-timeout", str(ctx.config.get("network.timeout", 30)),
             "-threads", str(min(ctx.config.get("network.concurrency", 50), 100)),
+            "-rate-limit", str(ctx.config.get("network.rate_limit_rps", 10)),
             "-follow-redirects",
             "-status-code",
             "-title",
@@ -142,11 +146,10 @@ def _validate_with_python(ctx, targets) -> int:
     def _probe(target_url: str):
         ctx.rate_limiter.acquire()
         try:
-            resp = httpx_lib.get(
+            resp = rx_http.get(ctx.config, 
                 target_url,
                 timeout=timeout,
                 follow_redirects=True,
-                verify=not insecure,
             )
         except Exception:
             return None

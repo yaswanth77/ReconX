@@ -116,9 +116,39 @@ def _export_csv(data_dir: Path, out_path: str):
 
 
 def _export_md(data_dir: Path, out_path: str):
-    """Export as markdown."""
+    """Export as markdown: recon inventory summary plus findings."""
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     lines = ["# ReconX Export\n"]
+
+    hosts = list(_stream_jsonl(data_dir / "hosts.jsonl"))
+    services = list(_stream_jsonl(data_dir / "services.jsonl"))
+    urls = list(_stream_jsonl(data_dir / "urls.jsonl"))
+    findings_all = list(_stream_jsonl(data_dir / "findings.jsonl"))
+
+    # Summary counts so a recon-only run produces a useful report, not an empty one.
+    lines.append("## Summary\n")
+    lines.append(f"- Hosts: {len(hosts)}")
+    lines.append(f"- Live services: {len(services)}")
+    lines.append(f"- URLs: {len(urls)}")
+    lines.append(f"- Findings: {len(findings_all)}\n")
+
+    if services:
+        lines.append("## Live services\n")
+        lines.append("| Service | Status | Title | Server |")
+        lines.append("|---|---|---|---|")
+        for s in services:
+            title = (s.get("title") or "").replace("|", "/")[:60]
+            lines.append(
+                f"| {s.get('final_url') or s.get('service', '')} | "
+                f"{s.get('status', '')} | {title} | {s.get('server', '')} |"
+            )
+        lines.append("")
+    elif hosts:
+        lines.append("## Hosts\n")
+        for h in hosts:
+            ips = ",".join(h.get("dns", {}).get("a", []) or [])
+            lines.append(f"- {h.get('host')} ({ips})")
+        lines.append("")
 
     vulns = list(_stream_jsonl(data_dir / "vulns.jsonl"))
     if vulns:

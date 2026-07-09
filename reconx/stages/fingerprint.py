@@ -12,6 +12,9 @@ import hashlib
 console = Console()
 
 
+from reconx.core import http as rx_http
+
+
 def run(ctx):
     """Execute fingerprinting stage."""
     import httpx as httpx_lib
@@ -75,11 +78,10 @@ def _get_favicon_hash(base_url: str, ctx) -> str | None:
     import httpx as httpx_lib
     try:
         ctx.rate_limiter.acquire()
-        resp = httpx_lib.get(
+        resp = rx_http.get(ctx.config, 
             f"{base_url}/favicon.ico",
             timeout=10,
             follow_redirects=True,
-            verify=False,
         )
         if resp.status_code == 200 and len(resp.content) > 0:
             return hashlib.md5(resp.content).hexdigest()

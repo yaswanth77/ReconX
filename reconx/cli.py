@@ -476,12 +476,14 @@ def install(install_all):
 @click.option("--concurrency", type=int, default=None, help="Max concurrent workers")
 @click.option("--timeout", type=int, default=None, help="Per-request timeout (sec)")
 @click.option("--ports", default=None, help="Comma-separated ports")
-@click.option("--proxy", default=None, help="HTTP proxy (e.g., http://127.0.0.1:8080)")
+@click.option("--proxy", default=None, help="HTTP proxy for all target traffic (e.g., http://127.0.0.1:8080)")
+@click.option("--user-agent", "user_agent", default=None, help="Exact User-Agent for every request (RoE requirement)")
+@click.option("--header", "headers", multiple=True, help="Custom header 'Name: Value' on every request, repeatable (e.g. -H 'X-Bug-Bounty: handle')")
 @click.option("--insecure", is_flag=True, help="Skip TLS verification")
 @click.pass_context
 def run(ctx, target, scope_path, profile, stage_list, skip, run_id,
         resume, ai, ai_provider, ai_model, ai_key, rate, concurrency,
-        timeout, ports, proxy, insecure):
+        timeout, ports, proxy, user_agent, headers, insecure):
     """Run the full recon pipeline on a target."""
     console.print(BANNER)
 
@@ -504,6 +506,10 @@ def run(ctx, target, scope_path, profile, stage_list, skip, run_id,
         config.set("http.ports", [int(p) for p in ports.split(",")])
     if proxy:
         config.set("http.proxy", proxy)
+    if user_agent:
+        config.set("http.user_agent", user_agent)
+    if headers:
+        config.set("http.headers", list(headers))
     if insecure:
         config.set("http.insecure", True)
     if ai is not None:
@@ -552,7 +558,7 @@ def run(ctx, target, scope_path, profile, stage_list, skip, run_id,
 
     # Initialize runner
     from reconx.core.runner import ToolRunner
-    runner = ToolRunner(log_dir=run_dir / "logs")
+    runner = ToolRunner(log_dir=run_dir / "logs", config=config)
 
     # Initialize rate limiter
     from reconx.core.ratelimit import RateLimiter
@@ -640,8 +646,11 @@ def run(ctx, target, scope_path, profile, stage_list, skip, run_id,
 @click.argument("stage_name")
 @click.option("--run", "run_path", required=True, help="Path to existing run directory")
 @click.option("--fresh", is_flag=True, help="Ignore cached data")
+@click.option("--user-agent", "user_agent", default=None, help="Override User-Agent for every request (RoE requirement)")
+@click.option("--header", "headers", multiple=True, help="Override/add a 'Name: Value' header on every request, repeatable")
+@click.option("--proxy", default=None, help="Override HTTP proxy for all target traffic")
 @click.pass_context
-def stage(ctx, stage_name, run_path, fresh):
+def stage(ctx, stage_name, run_path, fresh, user_agent, headers, proxy):
     """Run a single pipeline stage against an existing run."""
     console.print(f"[bold]Running stage: {stage_name}[/bold]")
 
@@ -667,9 +676,17 @@ def stage(ctx, stage_name, run_path, fresh):
     from reconx.core.scheduler import PipelineContext, PipelineScheduler
 
     config = Config(manifest.get("config", {}))
+    # Restore the original run's UA/header/proxy from the manifest, but allow the
+    # single-stage re-run to override them (e.g. set a mandatory RoE header now).
+    if proxy:
+        config.set("http.proxy", proxy)
+    if user_agent:
+        config.set("http.user_agent", user_agent)
+    if headers:
+        config.set("http.headers", list(headers))
     scope = Scope(run_dir / "inputs" / "scope.used.yaml")
     stores = StoreManager(run_dir / "data")
-    runner = ToolRunner(log_dir=run_dir / "logs")
+    runner = ToolRunner(log_dir=run_dir / "logs", config=config)
     rate_limiter = RateLimiter(rate=config.get("network.rate_limit_rps", 10))
 
     context = PipelineContext(
