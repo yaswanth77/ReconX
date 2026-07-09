@@ -128,6 +128,19 @@ class PipelineScheduler:
         Returns:
             Dict of stage_name → status.
         """
+        # Validate any explicitly requested stage/skip names against the registry.
+        # Silently intersecting with STAGE_ORDER meant an unknown name (for example
+        # a module filename like "subdomains" instead of the key "subs") ran zero
+        # stages and still reported success. Fail loudly with the valid keys instead.
+        valid = set(STAGE_REGISTRY)
+        unknown = [s for s in (stages or []) if s not in valid] + \
+                  [s for s in (skip or []) if s not in valid]
+        if unknown:
+            raise ValueError(
+                f"Unknown stage name(s): {', '.join(sorted(set(unknown)))}. "
+                f"Valid stages: {', '.join(STAGE_ORDER)}."
+            )
+
         # Determine which stages to run
         enabled = stages or self.ctx.config.get_enabled_stages()
         skip_set = set(skip or [])

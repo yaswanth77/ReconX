@@ -77,7 +77,7 @@ def run(ctx):
     if ctx.runner.is_available("subfinder"):
         for root in roots:
             console.print(f"  [dim]Running subfinder ({root})...[/dim]")
-            result = ctx.runner.run("subfinder", ["-d", root, "-silent"], timeout=120)
+            result = ctx.runner.run("subfinder", ["-d", root, "-all", "-silent"], timeout=180)
             if result.success:
                 before = len(sources)
                 for line in result.lines:

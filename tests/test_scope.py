@@ -70,3 +70,13 @@ def test_url_in_scope_enforces_port_and_extension(tmp_path):
     assert s.url_in_scope("https://api.example.com/a")
     assert not s.url_in_scope("https://api.example.com:8443/a")
     assert not s.url_in_scope("https://api.example.com/logo.png")
+
+
+def test_scheduler_rejects_unknown_stage_names():
+    # Regression: unknown --stages used to run zero stages and report success.
+    import pytest
+    from reconx.core.scheduler import PipelineScheduler
+    sched = PipelineScheduler.__new__(PipelineScheduler)  # validation runs before ctx use
+    with pytest.raises(ValueError) as e:
+        PipelineScheduler.run(sched, stages=["subdomains"])
+    assert "Unknown stage" in str(e.value) and "subs" in str(e.value)
